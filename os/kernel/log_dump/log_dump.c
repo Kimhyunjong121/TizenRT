@@ -70,6 +70,7 @@
 #define LOG_DUMP_COMP_CHECK_RETRY_CNT 		(CONFIG_LOG_DUMP_HANG_CHECK_SEC * USEC_PER_SEC / LOG_DUMP_COMP_CHECK_RETRY_USEC)
 #endif
 
+
 static bool is_started_to_save;
 
 /****************************************************************************
@@ -569,6 +570,14 @@ size_t log_dump_read(FAR char *buffer, size_t buflen)
 	return ret;
 }
 
+
+
+
+
+
+
+
+
 int log_dump(int argc, char *argv[])
 {
 	struct mq_attr attr;
@@ -613,3 +622,188 @@ int log_dump(int argc, char *argv[])
 		}
 	}
 }
+
+
+ #define ASSERT_LOG_BUF_SIZE 8192
+static char hj_assert_log[ASSERT_LOG_BUF_SIZE];
+static int hj_assert_situation=0;
+static int hj_assert_log_index=0;
+static int hj_log_len=0;
+void hj_assert_log_init(){
+	hj_assert_situation=0;
+	hj_assert_log_index=0;
+}
+int hj_assert_log_save(char ch){
+	if(hj_assert_log_index<ASSERT_LOG_BUF_SIZE) hj_assert_log[hj_assert_log_index++]=ch;
+}
+int get_hj_assert_log_save_size(){
+	return hj_log_len;
+}
+int set_hj_assert_situation(){
+	lldbg("\n\n\n===============================FROM THIS, lldbg LOG WILL BE SAVED!!================================\n\n\n\n");
+	hj_assert_situation=1;
+}
+int set_hj_notassert_situation(){
+	lldbg("\n\n\n=============================================TO THIS===============================================\n\n\n");
+	
+	hj_assert_situation=0;
+}
+int get_hj_assert_log(char *buf,int size){
+	int i;
+	for(i=0;i<get_hj_assert_log_save_size;i++){
+		if(i>=size) break;
+		buf[i]=hj_assert_log[i];
+	}
+	return i;
+}
+void hj_append_assert_log(const char *fmt, va_list ap){
+	if (hj_log_len>=ASSERT_LOG_BUF_SIZE - 1){
+		return ;
+	}
+	size_t remain=ASSERT_LOG_BUF_SIZE - hj_log_len-1;
+	int written = vsnprintf(hj_assert_log + hj_log_len, remain+1,fmt,ap);
+	if(written<0) return;
+	if((size_t)written > remain){
+		hj_log_len = ASSERT_LOG_BUF_SIZE -1 ;
+	}
+	else{
+		hj_log_len +=(size_t)written;
+	}
+	hj_assert_log[hj_log_len]='\0';
+}
+void assert_log_to_buffer(FAR const char *fmt, va_list ap){
+	if(hj_assert_situation){
+		va_list ap2;
+		va_copy(ap2,ap);
+		hj_append_assert_log(fmt,ap2);
+		va_end(ap2);
+	}
+}
+int save_assert_log(){
+	int ret;
+	lldbg("\n\n\n===============assert log file saving start==================\n\n\n");
+	lldbg("\nhj_log_save_size is %d\n",get_hj_assert_log_save_size());
+	int fd=open("/mnt/hj_assert_logsave.txt",O_WRONLY|O_CREAT|O_TRUNC);
+	if(fd<0){
+		lldbg("file open failed\n");
+		return -1;
+	}
+	lldbg("file open success\n");
+	int log_size=write(fd,hj_assert_log,strlen(hj_assert_log));
+	if(ret<0){
+		lldbg("file write failed\n");
+		return -1;
+	}
+	lldbg("file write success, count:%d\n",log_size);
+	lldbg("\n\n\n===============assert log file saving end=====================\n\n\n");
+	return log_size;
+}
+static unsigned char compressed_buf[ASSERT_LOG_BUF_SIZE];
+static unsigned int compressed_buf_size;
+void assert_log_compress(){
+
+	lldbg("\n\n================compress start==============\n\n");
+	compressed_buf_size=ASSERT_LOG_BUF_SIZE;
+	compress_block(compressed_buf,&compressed_buf_size,hj_assert_log,ASSERT_LOG_BUF_SIZE);
+	lldbg("compressed buf size: %d\n",compressed_buf_size);
+	lldbg("first 4bytes of compressed buf: %c%c%c%c\n",compressed_buf[0],compressed_buf[1],compressed_buf[2],compressed_buf[3]);
+	lldbg("\n====================compress end =====================\n");
+		
+}
+/*
+	int fd2=open("/mnt/hj_logsave_zip",O_WRONLY|O_CREAT|O_TRUNC);
+	close(fd2);
+	lldbg("log_dump_read_wake() start\n");
+	log_dump_read_wake();
+	lldbg("\nlog_Dump_read_wake() success!\n");
+	lldbg("\n");
+	for(int i=0;i<20;i++)lldbg("A");
+	set_hj_notassert_situation();
+	lldbg("\n\n\n===============log file saving start==================\n\n\n");
+	lldbg("\nhj_log_save_size is %d\n",get_hj_assert_log_save_size());
+	int fd=open("/mnt/hj_assert_logsave.txt",O_WRONLY|O_CREAT|O_TRUNC);
+	if(fd<0){
+		lldbg("file open failed\n");
+		goto hj_out_zone;
+	}
+	lldbg("file open success\n");
+	int log_size=write(fd,hj_assert_log,strlen(hj_assert_log));
+	if(ret<0){
+		lldbg("file write failed\n");
+		goto hj_out_zone;
+	}
+	lldbg("file write success, count:%d\n",log_size);
+	close(fd);
+	lldbg("\n\n\n===============log file saving end===================\n\n\n");
+		lldbg("\n\n================compress start==============\n\n");
+		unsigned int compressed_buf_size2=SIZE;
+		unsigned int text_size=SIZE;
+		unsigned int tm_size=SIZE;
+		compressed_buf_size2=SIZE;
+		compress_block(compressed_buf2,&compressed_buf_size2,hj_assert_log,text_size);
+		lldbg("compressed buf size: %d\n",compressed_buf_size2);
+		lldbg("first 4bytes of compressed buf: %c%c%c%c\n",compressed_buf2[0],compressed_buf2[1],compressed_buf2[2],compressed_buf2[3]);
+		lldbg("\n====================compress end =====================\n");
+		lldbg("\n\n================compress file write start==============\n\n");
+		fd=open("/mnt/hj_assert_logsave_zip",O_WRONLY|O_CREAT|O_TRUNC);
+			if(fd<0){
+				lldbg("file open failed\n");
+				goto hj_out_zone;
+			}
+			lldbg("file open success\n");
+			ret=write(fd,compressed_buf2,compressed_buf_size2);
+			if(ret<0){
+				lldbg("file write failed\n");
+				goto hj_out_zone;
+			}
+		close(fd);
+		lldbg("write count: %d\n",ret);
+		lldbg("\n\n=====================compress file write end ===================\n\n");
+		lldbg("\n========================== compressed file read start (assert_log)====================\n");
+		for(int i=0;i<SIZE;i++)compressed_buf2[i]=0;
+		fd=open("/mnt/hj_assert_logsave_zip",O_RDONLY);
+			if(fd<0){
+				lldbg("file open failed\n");
+				goto hj_out_zone;
+			}
+			lldbg("file open success\n");
+		ret=read(fd,compressed_buf2,sizeof(compressed_buf2));
+		if(ret<0){
+			lldbg("file read failed\n");
+			goto hj_out_zone;
+		}
+		lldbg("file read successed, count:%d\n",ret);
+		close(fd);
+		lldbg("\n========================== compressed file read end (assert_log)======================\n");
+		lldbg("\n========================== compressed data decompress and read start======================\n");
+		tm_size=SIZE;
+		compressed_buf_size2=ret;
+		decompress_block(tm,&tm_size,compressed_buf2,&compressed_buf_size2);
+		lldbg("decompressed size: %d\n",tm_size);
+		tm[SIZE-1]='\0';
+		lldbg("\n%s\n",tm);
+		lldbg("\n========================== compressed data decompress and read end======================\n");
+		lldbg("\n========================== compressed file read start (not assert_log)====================\n");
+		for(int i=0;i<SIZE;i++)compressed_buf2[i]=0;
+		fd=open("/mnt/hj_logsave_zip",O_RDONLY);
+			if(fd<0){
+				lldbg("file open failed\n");
+				goto hj_out_zone;
+			}
+			lldbg("file open success\n");
+		ret=read(fd,compressed_buf2,sizeof(compressed_buf2));
+		if(ret<0){
+			lldbg("file read failed\n");
+			goto hj_out_zone;
+		}
+		lldbg("file read successed, count:%d\n",ret);
+		close(fd);
+
+		lldbg("\n========================== compressed file read end (not assert_log)====================\n");
+		lldbg("\n========================== compressed data decompress and read start======================\n");
+		tm_size=SIZE;
+		compressed_buf_size2=ret-4;
+		decompress_block(tm,&tm_size,compressed_buf2+4,&compressed_buf_size2);
+		lldbg("\n========================== compressed data decompress and read end======================\n");
+
+		*/
